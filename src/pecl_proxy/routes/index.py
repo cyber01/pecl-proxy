@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .. import __version__
+from ..rewrite import mirror_host
 
 _templates = Environment(
     loader=FileSystemLoader(Path(__file__).parent.parent / "templates"),
@@ -25,6 +26,7 @@ async def index(request: Request) -> HTMLResponse:
     html = _templates.get_template("index.html").render(
         version=__version__,
         public_base=request.state.public_base,
+        mirror=mirror_host(request.state.public_base),
         upstream=service.upstream.status(),
         packages=list(service.store.packages().values()),
         files=files,

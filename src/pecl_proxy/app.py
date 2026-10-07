@@ -18,6 +18,7 @@ from .config import Settings
 from .logs import app_log, log_event
 from .metrics import Metrics
 from .middleware import RequestContextMiddleware
+from .rewrite import mirror_host
 from .routes import admin, index, protocol
 from .storage import CacheStore
 from .upstream import UpstreamClient
@@ -63,6 +64,7 @@ def create_app(
                   public_url=settings.public_url, admin_enabled=settings.admin_enabled,
                   index_enabled=settings.index_enabled,
                   metrics=_metrics_location(settings))
+        _warn_about_public_url(settings)
         try:
             yield
         finally:
@@ -97,6 +99,20 @@ def create_app(
         app.include_router(index.router)
     app.include_router(protocol.router)  # catch-all, must stay last
     return app
+
+
+def _warn_about_public_url(settings: Settings) -> None:
+    if settings.public_url is None:
+        log_event(app_log, logging.WARNING,
+                  "PUBLIC_URL is not set: URLs in responses are built from the Host header, "
+                  "which PEAR clients send without the port; set PUBLIC_URL unless clients "
+                  "reach the service on port 80/443", "config_warning", setting="PUBLIC_URL")
+    elif mirror_host(settings.public_url) is None:
+        log_event(app_log, logging.WARNING,
+                  "PUBLIC_URL is not on port 80/443: the proxy cannot be offered as a channel "
+                  "mirror, so `pecl install` checks pecl.php.net/channel.xml before every "
+                  "install and fails when it is unreachable; publish the service on 80/443",
+                  "config_warning", setting="PUBLIC_URL", public_url=settings.public_url)
 
 
 def _metrics_location(settings: Settings) -> str | None:

@@ -42,14 +42,26 @@
 
   <h2>Подключение клиента</h2>
   <p>Один раз на машине или в образе направить канал pecl.php.net на этот сервер:</p>
+  {% if mirror %}
+  <pre><code>pecl channel-update {{ public_base }}/channel.xml
+pecl config-set preferred_mirror {{ mirror }}</code></pre>
+  <p class="muted"><code>preferred_mirror</code> нужен для работы без интернета: перед каждой
+    установкой pecl проверяет channel.xml своего канала и без этой настройки обращается
+    к pecl.php.net, а при его недоступности падает.</p>
+  {% else %}
   <pre><code>pecl channel-update {{ public_base }}/channel.xml</code></pre>
+  <p class="bad">Сервис опубликован не на порту 80/443, поэтому его нельзя указать как
+    <code>preferred_mirror</code>: без доступа к pecl.php.net команда <code>pecl install</code>
+    упадёт на проверке channel.xml. Опубликуйте сервис на 80/443 (например, за nginx).</p>
+  {% endif %}
   <p>Дальше установка как обычно, все запросы идут через прокси:</p>
   <pre><code>pecl install redis</code></pre>
   <p>В Dockerfile:</p>
   <pre><code>RUN pecl channel-update {{ public_base }}/channel.xml \
- &amp;&amp; pecl install redis-6.3.0</code></pre>
+{% if mirror %} &amp;&amp; pecl config-set preferred_mirror {{ mirror }} \
+{% endif %} &amp;&amp; pecl install redis-6.3.0</code></pre>
   <p class="muted">Команда <code>pecl update-channels</code> при доступном интернете вернёт канал
-    на оригинальный pecl.php.net; после неё повторите <code>channel-update</code>.</p>
+    на оригинальный pecl.php.net; после неё повторите команды подключения.</p>
 
   <h2>Пакеты в кеше ({{ packages|length }})</h2>
   {% if packages %}
