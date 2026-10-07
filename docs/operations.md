@@ -148,6 +148,36 @@ PECL_PROXY_PUBLIC_URL=http://pecl-proxy.example.local
   Сервис будет брать схему, хост и префикс пути из `X-Forwarded-Proto`, `X-Forwarded-Host`,
   `X-Forwarded-Prefix`, а IP клиента для логов — из `X-Forwarded-For`.
 
+### nginx на хосте, сервис в Docker
+
+Внутри контейнера соединение от nginx приходит не с внешнего IP сервера и не с `127.0.0.1`,
+а с адреса шлюза Docker-сети (`172.17.0.1`, `172.18.0.1` и т.п.). Если этот адрес не входит
+в `TRUSTED_PROXIES`, сервис не доверяет `X-Forwarded-For` и пишет в логи адрес шлюза
+вместо IP пользователя (и одно предупреждение `untrusted_proxy_headers` с этим адресом).
+
+Настройка:
+
+```sh
+# .env
+PECL_PROXY_PUBLIC_URL=https://pecl.example.local
+PECL_PROXY_TRUSTED_PROXIES=private      # или точнее: подсеть Docker-сети, например 172.18.0.0/16
+```
+
+```yaml
+# docker-compose.yml: порт доступен только nginx на этом хосте
+    ports:
+      - "127.0.0.1:8080:8080"
+```
+
+Публикация порта только на `127.0.0.1` важна: иначе клиенты могли бы обратиться к сервису
+напрямую, в обход nginx. Адрес шлюза можно посмотреть в предупреждении в логе или командой
+`docker network inspect <проект>_default -f '{{range .IPAM.Config}}{{.Gateway}} {{.Subnet}}{{end}}'`.
+
+nginx должен передавать адрес клиента: `proxy_set_header X-Forwarded-For
+$proxy_add_x_forwarded_for;` или `proxy_set_header X-Real-IP $remote_addr;`. Из
+`X-Forwarded-For` берётся самый правый адрес, не входящий в `TRUSTED_PROXIES`, поэтому
+подставленный клиентом заголовок не позволяет подделать IP.
+
 Если сервис опубликован под префиксом (`https://example.local/pecl`), укажите его в
 `PUBLIC_URL` или передавайте `X-Forwarded-Prefix`. Ссылки внутри REST-файлов
 (`xlink:href="/rest/..."`) прокси тоже дополняет префиксом.

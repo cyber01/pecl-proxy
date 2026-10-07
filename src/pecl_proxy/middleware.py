@@ -11,7 +11,7 @@ import uuid
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .config import Settings
-from .logs import access_log, log_event
+from .logs import access_log, app_log, log_event
 from .metrics import Metrics
 
 _REQUEST_ID = re.compile(r"[A-Za-z0-9._\-]{1,64}")
@@ -21,14 +21,16 @@ class RequestContextMiddleware:
     """Works out how the client sees the service and logs every request.
 
     Behind a reverse proxy listed in ``TRUSTED_PROXIES`` the ``X-Forwarded-Proto``,
-    ``X-Forwarded-Host``, ``X-Forwarded-Prefix`` and ``X-Forwarded-For`` headers are honoured,
-    so URLs in responses use the external scheme/host and logs show the real client IP.
+    ``X-Forwarded-Host``, ``X-Forwarded-Prefix``, ``X-Forwarded-For`` and ``X-Real-IP`` headers
+    are honoured, so URLs in responses use the external scheme/host and logs show the real
+    client IP.
     """
 
     def __init__(self, app: ASGIApp, settings: Settings, metrics: Metrics):
         self.app = app
         self.settings = settings
         self.metrics = metrics
+        self._warned: set[str] = set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -91,7 +93,7 @@ class RequestContextMiddleware:
 
     def _resolve(self, scope: Scope, headers: dict[str, str]) -> tuple[str | None, str]:
         client = scope.get("client")
-        peer = client[0] if client else None
+        peer = _normalize_ip(client[0]) if client else None
         scheme = scope.get("scheme", "http")
         host = headers.get("host")
         if not host:
@@ -107,27 +109,73 @@ class RequestContextMiddleware:
             forwarded_host = _first(headers.get("x-forwarded-host"))
             if forwarded_host:
                 host = forwarded_host
-            forwarded_for = _first(headers.get("x-forwarded-for"))
-            if forwarded_for:
-                client_ip = forwarded_for
             forwarded_prefix = _first(headers.get("x-forwarded-prefix"))
             if forwarded_prefix:
                 prefix = "/" + forwarded_prefix.strip("/") if forwarded_prefix.strip("/") else ""
+            client_ip = self._client_ip(peer, headers)
+        elif any(name in headers for name in _FORWARDED_HEADERS):
+            self._warn_untrusted(peer)
 
         public_base = self.settings.public_url or f"{scheme}://{host}{prefix}"
         return client_ip, public_base
 
-    def _trusted(self, peer: str | None) -> bool:
+    def _client_ip(self, peer: str | None, headers: dict[str, str]) -> str | None:
+        chain = [_normalize_ip(item) for item in headers.get("x-forwarded-for", "").split(",")
+                 if item.strip()]
+        if chain:
+            # Proxies append the address they received the request from, so the client is
+            # the right-most address that is not one of our trusted proxies. Anything to the
+            # left of it was sent by the client and may be forged.
+            for address in reversed(chain):
+                if not self._trusted(address):
+                    return address
+            return chain[0]
+        real_ip = headers.get("x-real-ip", "").strip()
+        return _normalize_ip(real_ip) if real_ip else peer
+
+    def _trusted(self, address: str | None) -> bool:
         networks = self.settings.trusted_networks
         if networks is None:
             return True
-        if peer is None:
+        if address is None:
             return False
         try:
-            address = ipaddress.ip_address(peer)
+            ip = ipaddress.ip_address(address)
         except ValueError:
             return False
-        return any(address in network for network in networks)
+        return any(ip in network for network in networks)
+
+    def _warn_untrusted(self, peer: str | None) -> None:
+        key = peer or "unknown"
+        if key in self._warned or len(self._warned) >= 100:
+            return
+        self._warned.add(key)
+        log_event(
+            app_log, logging.WARNING,
+            f"X-Forwarded-* headers from {key} are ignored because it is not in "
+            "PECL_PROXY_TRUSTED_PROXIES; add it there if it is your reverse proxy",
+            "untrusted_proxy_headers", peer=key, trusted_proxies=self.settings.trusted_proxies,
+        )
+
+
+_FORWARDED_HEADERS = ("x-forwarded-for", "x-real-ip", "x-forwarded-proto", "x-forwarded-host",
+                      "x-forwarded-prefix")
+
+
+def _normalize_ip(value: str) -> str:
+    """``::ffff:10.0.0.1`` -> ``10.0.0.1``; ``1.2.3.4:5678`` / ``[::1]:80`` -> address only."""
+    value = value.strip()
+    if value.startswith("[") and "]" in value:
+        value = value[1:value.index("]")]
+    elif value.count(":") == 1:
+        value = value.split(":", 1)[0]
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return value
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        return str(address.ipv4_mapped)
+    return str(address)
 
 
 def _first(value: str | None) -> str | None:

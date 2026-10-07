@@ -29,7 +29,9 @@ journald). `PECL_PROXY_LOG_FILE=/path/pecl-proxy.log` пишет в файл; ф
 - `cache` — как в заголовке `X-Cache` (`HIT`, `MISS`, `REVALIDATED`, `UPDATED`, `STALE`),
   а также `NEGATIVE` (недавний 404 upstream), `UNAVAILABLE` (upstream недоступен, в кеше нет)
   и `BAD_UPSTREAM` (битый или слишком большой ответ upstream).
-- `client_ip` — с учётом `X-Forwarded-For` от доверенных прокси.
+- `client_ip` — с учётом `X-Forwarded-For`/`X-Real-IP` от доверенных прокси
+  (`TRUSTED_PROXIES`); иначе — адрес, с которого пришло соединение (за nginx в Docker это
+  шлюз Docker-сети, см. [operations.md](operations.md#nginx-на-хосте-сервис-в-docker)).
 - `request_id` — из заголовка `X-Request-ID` или сгенерированный; возвращается в ответе.
 
 ## admin
@@ -53,6 +55,7 @@ journald). `PECL_PROXY_LOG_FILE=/path/pecl-proxy.log` пишет в файл; ф
 |---|---|---|
 | `startup` / `shutdown` | INFO | Запуск и остановка, с основными настройками. |
 | `config_warning` | WARNING | Не задан `PUBLIC_URL` или он не на порту 80/443. |
+| `untrusted_proxy_headers` | WARNING | Заголовки `X-Forwarded-*`/`X-Real-IP` пришли с адреса не из `TRUSTED_PROXIES` и проигнорированы (`peer` — этот адрес). Пишется один раз на адрес. |
 | `cache_store` | INFO | Ресурс сохранён в кеш (`key`, `size`, `sha256`). |
 | `upstream_retry` | INFO | Неудачная попытка, будет повтор (`attempt`, `error`, `delay`). |
 | `upstream_down` / `upstream_up` | WARNING / INFO | Upstream стал недоступен / снова доступен. |

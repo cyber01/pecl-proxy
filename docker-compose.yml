@@ -13,6 +13,8 @@ services:
         required: false
     ports:
       - "80:8080"
+      # behind nginx on this host instead: "127.0.0.1:8080:8080" and
+      # PECL_PROXY_TRUSTED_PROXIES=private in .env (nginx connects via the Docker gateway)
       # - "9100:9100"  # when PECL_PROXY_METRICS_PORT=9100
     volumes:
       - pecl-cache:/data

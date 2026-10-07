@@ -3,6 +3,9 @@
 # pecl-proxy settings for this setup:
 #   PECL_PROXY_PUBLIC_URL=https://pecl.example.local
 #   PECL_PROXY_TRUSTED_PROXIES=<address of this nginx as seen by pecl-proxy>
+#     nginx on the Docker host -> the container sees the Docker network gateway
+#     (172.17.0.1, 172.18.0.1, ...): use "private" and publish the container port on
+#     127.0.0.1 only, e.g. ports: ["127.0.0.1:8080:8080"]
 #
 # Keep plain HTTP on port 80 answering (redirect is fine): before every install PEAR fetches
 # http://<preferred_mirror>/channel.xml and follows redirects.
@@ -32,6 +35,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Request-ID      $request_id;
         # archives can be large and the first download waits for pecl.php.net
         proxy_read_timeout 300s;

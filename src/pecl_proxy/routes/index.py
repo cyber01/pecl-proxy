@@ -30,6 +30,13 @@ async def index(request: Request) -> HTMLResponse:
         upstream=service.upstream.status(),
         packages=list(service.store.packages().values()),
         files=files,
-        size_mb=round(size / 1024**2, 1),
+        size=human_size(size),
     )
     return HTMLResponse(html)
+
+
+def human_size(size: int) -> str:
+    for unit, factor in (("ГБ", 1024**3), ("МБ", 1024**2)):
+        if size >= factor:
+            return f"{size / factor:.1f} {unit}"
+    return f"{size / 1024:.1f} КБ"

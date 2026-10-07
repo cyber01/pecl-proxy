@@ -28,6 +28,11 @@ def parse_size(value: object) -> int:
 
 ByteSize = Annotated[int, BeforeValidator(parse_size)]
 
+# TRUSTED_PROXIES=private: loopback and private ranges, e.g. the Docker network gateway that
+# a reverse proxy on the host connects through
+PRIVATE_NETWORKS = ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                    "::1/128", "fc00::/7")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -114,7 +119,7 @@ class Settings(BaseSettings):
     @classmethod
     def _check_networks(cls, value: str) -> str:
         for item in _split(value):
-            if item != "*":
+            if item not in ("*", "private"):
                 ipaddress.ip_network(item, strict=False)
         return value
 
@@ -124,7 +129,11 @@ class Settings(BaseSettings):
         items = _split(self.trusted_proxies)
         if "*" in items:
             return None
-        return [ipaddress.ip_network(item, strict=False) for item in items]
+        networks = []
+        for item in items:
+            for network in PRIVATE_NETWORKS if item == "private" else (item,):
+                networks.append(ipaddress.ip_network(network, strict=False))
+        return networks
 
     @property
     def admin_enabled(self) -> bool:

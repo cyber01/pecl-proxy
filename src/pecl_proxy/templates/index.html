@@ -37,7 +37,7 @@
     {% elif upstream.available %}<span class="ok">доступен</span>
     {% else %}<span class="bad">недоступен</span> (повтор через {{ upstream.retry_in_seconds }} с)
     {% endif %}
-    · в кеше {{ files }} файлов, {{ size_mb }} МБ
+    · в кеше пакетов: {{ packages|length }}, файлов {{ files }} ({{ size }})
   </p>
 
   <h2>Подключение клиента</h2>
