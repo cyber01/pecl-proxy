@@ -1,11 +1,12 @@
 # pecl-proxy documentation
 
-| | English | Русский |
-|---|---|---|
-| Overview / Обзор | [README](../README.md) | [README_ru](../README_ru.md) |
-| Contents / Оглавление | [docs/en](en/README.md) | [docs/ru](ru/README.md) |
-| Client setup / Подключение клиентов | [client-setup](en/client-setup.md) | [client-setup](ru/client-setup.md) |
-| Configuration / Конфигурация | [configuration](en/configuration.md) | [configuration](ru/configuration.md) |
-| Operations / Эксплуатация | [operations](en/operations.md) | [operations](ru/operations.md) |
-| Admin API and CLI / Admin API и CLI | [admin-api](en/admin-api.md) | [admin-api](ru/admin-api.md) |
-| Logging / Логи | [logging](en/logging.md) | [logging](ru/logging.md) |
+**English** | [Русский](ru/README.md) · [Project overview](../README.md)
+
+- [Client setup](en/client-setup.md) — connecting clients, Dockerfile usage, what works
+  offline, which requests pecl commands make, PEAR client quirks.
+- [Configuration](en/configuration.md) — every `PECL_PROXY_*` environment variable.
+- [Operations](en/operations.md) — caching policy, heartbeat, upstream outages, cache warm-up,
+  storage and backups, running without Docker, reverse proxy and client IPs, metrics,
+  health check, building the image in a closed network.
+- [Admin API and CLI](en/admin-api.md) — managing the cache over HTTP and from the command line.
+- [Logging](en/logging.md) — JSON log format, `access`/`admin`/`app` records, events.

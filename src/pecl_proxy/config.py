@@ -6,7 +6,7 @@ import ipaddress
 import re
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BeforeValidator, Field, SecretStr, field_validator
@@ -66,6 +66,7 @@ class Settings(BaseSettings):
 
     # index page
     index_enabled: bool = True
+    index_language: Literal["en", "ru"] = "en"
 
     # metrics
     metrics_enabled: bool = True

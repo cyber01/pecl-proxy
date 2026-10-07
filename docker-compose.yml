@@ -5,8 +5,8 @@
 # `pecl config-set preferred_mirror` works - PEAR ignores ports for that check.
 services:
   pecl-proxy:
-    build: .
-    image: pecl-proxy:latest
+    build:
+      context: .
     restart: unless-stopped
     env_file:
       - path: .env

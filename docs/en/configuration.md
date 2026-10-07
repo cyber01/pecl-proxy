@@ -59,6 +59,7 @@ archive with the channel it installs from, and archives are served unmodified. D
 | Variable | Default | Purpose |
 |---|---|---|
 | `INDEX_ENABLED` | `true` | Page `/` with cached packages, upstream state and client setup commands. `false` makes `/` answer 404. |
+| `INDEX_LANGUAGE` | `en` | Language of the page: `en` or `ru`. |
 
 ## Metrics
 

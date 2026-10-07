@@ -62,7 +62,7 @@ def create_app(
                   version=__version__, upstream=settings.upstream_url,
                   data_dir=str(settings.data_dir), offline=settings.offline,
                   public_url=settings.public_url, admin_enabled=settings.admin_enabled,
-                  index_enabled=settings.index_enabled,
+                  index_enabled=settings.index_enabled, index_language=settings.index_language,
                   metrics=_metrics_location(settings))
         _warn_about_public_url(settings)
         try:
