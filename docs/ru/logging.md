@@ -28,7 +28,7 @@ journald). `PECL_PROXY_LOG_FILE=/path/pecl-proxy.log` пишет в файл; ф
 
 - `resource` — тип ресурса канала (`channel`, `allreleases`, `release`, `deps`, `archive`, …),
   `null` для служебных путей.
-- `cache` — как в заголовке `X-Cache` (`HIT`, `MISS`, `REVALIDATED`, `UPDATED`, `STALE`),
+- `cache` — как в заголовке `X-Cache` (`HIT`, `MISS`, `REVALIDATED`, `UPDATED`, `STALE`, `GENERATED`),
   а также `NEGATIVE` (недавний 404 upstream), `UNAVAILABLE` (upstream недоступен, в кеше нет)
   и `BAD_UPSTREAM` (битый или слишком большой ответ upstream).
 - `client_ip` — с учётом `X-Forwarded-For`/`X-Real-IP` от доверенных прокси

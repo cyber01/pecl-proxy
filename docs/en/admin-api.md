@@ -21,7 +21,7 @@ export ADMIN=http://pecl-proxy.example.local/_admin
 | Method and path | Action |
 |---|---|
 | `GET /status` | Version, upstream state, cache size, main settings. |
-| `GET /packages` | Cached packages: versions with archives, number of files, size. |
+| `GET /packages` | Cached packages: versions with archives and their stability, number of files, size. |
 | `GET /packages/{name}` | One package and the list of its cached files. |
 | `DELETE /packages/{name}` | Remove a package from the cache completely. |
 | `DELETE /packages/{name}/{version}` | Remove one version (archive and its REST files). |
@@ -38,6 +38,17 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" $ADMIN/refresh -d '{"package":
      -H "Content-Type: application/json"
 curl -s -X POST -H "Authorization: Bearer $TOKEN" $ADMIN/warm \
      -H "Content-Type: application/json" -d '{"packages": ["pecl_http-4.3.1"]}'
+```
+
+`packages` response (`stability` is `null` for a version whose metadata is not cached):
+
+```json
+{
+  "packages": [
+    {"name": "raphf", "versions": ["2.0.2", "0.1.0"],
+     "stability": {"2.0.2": "stable", "0.1.0": "beta"}, "files": 10, "size": 30582}
+  ]
+}
 ```
 
 `warm` response:
@@ -62,7 +73,7 @@ server. In Docker: `docker compose exec pecl-proxy pecl-proxy <command>`.
 |---|---|
 | `pecl-proxy serve` | Run the server (default command). |
 | `pecl-proxy warm SPEC... [--no-deps]` | Download packages into the cache (`redis`, `redis-6.3.0`, `apcu-beta`). |
-| `pecl-proxy list [--json]` | Cached packages. |
+| `pecl-proxy list [--json]` | Cached packages; non-stable versions are marked: `2.0.2, 0.1.0 (beta)`. |
 | `pecl-proxy purge NAME [VERSION]` | Remove a package or one version. |
 | `pecl-proxy refresh [NAME]` | Re-check metadata on the next request. |
 | `pecl-proxy verify` | Compare the sha256 of every cached file; exit code `1` on mismatches. |

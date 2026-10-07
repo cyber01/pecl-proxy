@@ -81,9 +81,14 @@ def cmd_list(settings: Settings, args: argparse.Namespace) -> int:
     if not packages:
         print("cache is empty")
     for summary in packages.values():
-        versions = ", ".join(summary.versions) or "(metadata only)"
+        versions = ", ".join(_version_label(v, summary.stability.get(v))
+                             for v in summary.versions) or "(metadata only)"
         print(f"{summary.name:<30} {versions}")
     return 0
+
+
+def _version_label(version: str, stability: str | None) -> str:
+    return version if stability in (None, "stable") else f"{version} ({stability})"
 
 
 def cmd_purge(settings: Settings, args: argparse.Namespace) -> int:

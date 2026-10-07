@@ -57,9 +57,10 @@ RUN pecl channel-update http://pecl-proxy.example.local/channel.xml \
  && docker-php-ext-enable redis apcu
 ```
 
-For builds that must work without internet access, **pin versions**. Without a version the
-client picks the newest release from the last `allreleases.xml` snapshot; if nobody has
-downloaded that release through the proxy yet, the offline install fails.
+**Pin versions** in builds that must be reproducible. Without a version the client picks the
+newest suitable release: while pecl.php.net is reachable, the newest one there (it gets
+cached); without it, the newest one in the proxy cache. The same Dockerfile may therefore
+install different versions online and offline.
 
 ### Disconnecting
 
@@ -68,13 +69,28 @@ pecl config-set preferred_mirror pecl.php.net
 pecl channel-update pecl.php.net        # needs access to pecl.php.net
 ```
 
+## Stable and non-stable releases
+
+Every release on pecl.php.net has a stability: `stable`, `beta`, `alpha` or `devel`. The proxy
+caches and serves all of them in the same way; which release to take is decided by the client:
+
+- `pecl install <package>` takes the newest release that is at least as stable as
+  `preferred_state` (`stable` by default, `pecl config-set preferred_state beta` changes it);
+- `<package>-beta`, `-alpha`, `-devel` relax this for one command;
+- `<package>-<version>` installs exactly that version, whatever its stability.
+
+The landing page marks non-stable cached versions, `GET /_admin/packages` and
+`pecl-proxy list` show the stability of every cached version ([admin-api.md](admin-api.md)).
+
 ## What works offline
 
 - Every version that has been downloaded through the proxy at least once, together with its
   PECL dependencies. When an archive is downloaded the proxy also fetches the metadata of that
   version.
-- `pecl install <package>` without a version — if the release that is newest in the stored
-  snapshot is cached.
+- `pecl install <package>` without a version — the newest cached release that fits
+  `preferred_state`. If only non-stable versions are cached, pecl says so ("latest release is
+  version 0.1.0, stability beta") and installs them with `<package>-beta` or an explicit
+  version.
 - Packages and versions that were never requested are unavailable ("No releases available" /
   504). The cache can be filled in advance with `pecl-proxy warm`
   ([operations.md](operations.md#cache-warm-up)).
@@ -87,13 +103,16 @@ commands that is metadata without archives — sometimes a lot of files:
 
 | Command | Client requests | Offline |
 |---|---|---|
-| `install`, `download`, `upgrade` | `r/<pkg>/allreleases.xml`, `p/<pkg>/info.xml`, `r/<pkg>/<v>.xml`, `r/<pkg>/deps.<v>.txt`, archive `get/<pkg>-<v>.tgz`; the same for required dependencies | Versions already downloaded through the proxy. |
-| `remote-info <pkg>` | `p/<pkg>/info.xml`, `r/<pkg>/allreleases.xml`, then `deps.<v>.txt` and `<v>.xml` of **every** release of the package. `pecl_http` has 160 releases, so the first call makes 322 requests, and every cache miss goes to pecl.php.net one after another. Later calls are served from the cache. | Versions whose metadata is cached; the client silently skips the rest. |
-| `remote-list`, `list-all` | `c/categories.xml`, then `c/<category>/packagesinfo.xml` for each of the ~50 pecl categories (several MB describing every package of the channel) | The last stored snapshot, including packages that are not cached; those cannot be installed offline. |
-| `search <text>` | `p/packages.xml`, then `p/<pkg>/info.xml` and `r/<pkg>/allreleases.xml` of every package whose name contains the text. A description search (`search <text> <description>`) reads `info.xml` of every package of the channel. | From the last snapshot of what is cached. |
-| `list-upgrades`, `upgrade-all` | `p/packages.xml`, `r/<pkg>/allreleases.xml` of installed packages and `<v>.xml` of the newer version found | From the last snapshot. |
+| `install`, `download`, `upgrade` | `r/<pkg>/allreleases.xml`, `p/<pkg>/info.xml`, `r/<pkg>/<v>.xml`, `r/<pkg>/deps.<v>.txt`, archive `get/<pkg>-<v>.tgz`; the same for required dependencies | Versions already downloaded through the proxy; without a version, the newest of them. |
+| `remote-info <pkg>` | `p/<pkg>/info.xml`, `r/<pkg>/allreleases.xml`, then `deps.<v>.txt` and `<v>.xml` of **every** release of the package. `pecl_http` has 160 releases, so the first call makes 322 requests, and every cache miss goes to pecl.php.net one after another. Later calls are served from the cache. | Only cached versions; `Latest` is the newest cached one. |
+| `remote-list`, `list-all` | `c/categories.xml`, then `c/<category>/packagesinfo.xml` for each of the ~50 pecl categories (several MB describing every package of the channel) | Generated from the cache: only packages with cached archives and only their cached versions. |
+| `search <text>` | `p/packages.xml`, then `p/<pkg>/info.xml` and `r/<pkg>/allreleases.xml` of every package whose name contains the text. A description search (`search <text> <description>`) reads `info.xml` of every package of the channel. | Searches only packages with cached archives (`p/packages.xml` is generated from the cache). |
+| `list-upgrades`, `upgrade-all` | `p/packages.xml`, `r/<pkg>/allreleases.xml` of installed packages and `<v>.xml` of the newer version found | Packages with cached archives; the newest cached version counts as the latest one. |
 
-Lists and `allreleases.xml` are refreshed after `METADATA_TTL`. Release files are kept forever
+While the upstream is reachable all of these go through the proxy and are cached like
+everything else; offline answers are described in
+[operations.md](operations.md#upstream-outages). Lists and `allreleases.xml` are refreshed
+after `METADATA_TTL`. Release files are kept forever
 and re-checked by the heartbeat ([operations.md](operations.md#what-is-cached-and-how)).
 The PEAR client also keeps its own cache of REST responses (`cache_dir`, `cache_ttl`
 defaults to 3600 s), so for an hour repeated calls on the same machine may not reach the proxy
@@ -128,6 +147,27 @@ Fix: the proxy lists itself as a mirror of the channel in the served `channel.xm
 PEAR builds the URL of this check **without a port**, so the service has to be reachable on
 80/443. If `PUBLIC_URL` uses another port, the proxy does not add itself as a mirror and logs a
 warning at startup.
+
+### Direct channel check in remote-info, remote-list, search
+
+`remote-info`, `remote-list`, `list-all`, `search` and `list-upgrades` start with
+`_checkChannelForStatus()` (`PEAR/Command/Remote.php`), which requests
+`http://pecl.php.net/channel.xml` **directly** — it ignores `preferred_mirror` (the variable is
+read but never used) and the proxy. Errors are ignored, so the commands still work, but in a
+closed network where packets to pecl.php.net are dropped the client waits for PHP's
+`default_socket_timeout` (60 s) every time. The proxy cannot see this request.
+
+Fix in isolated networks: make `pecl.php.net` resolve to the proxy, which answers
+`/channel.xml` for any host name. The proxy must listen on port 80 of that address.
+
+```sh
+docker build --add-host pecl.php.net:10.0.0.5 .        # 10.0.0.5 — the proxy
+docker run --add-host pecl.php.net:10.0.0.5 ...
+# docker-compose: extra_hosts: ["pecl.php.net:10.0.0.5"]
+# a host or VM: "10.0.0.5 pecl.php.net" in /etc/hosts, or a DNS record
+```
+
+`install` and `download` do not make this request; for them `preferred_mirror` is enough.
 
 ### The mirror is listed twice
 

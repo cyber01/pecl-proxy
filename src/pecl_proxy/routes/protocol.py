@@ -8,7 +8,7 @@ from email.utils import formatdate, parsedate_to_datetime
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
-from ..cache import BadUpstreamData, CacheService, Entry, NotFound, Unavailable
+from ..cache import BadUpstreamData, CacheService, CacheStatus, Entry, NotFound, Unavailable
 from ..resources import classify
 
 router = APIRouter()
@@ -29,7 +29,10 @@ async def channel_resource(request: Request, path: str) -> Response:
     except NotFound as exc:
         state.cache = exc.cache.value
         status = exc.status if 400 <= exc.status < 500 else 502
-        return PlainTextResponse(f"{resource.key}: not found upstream\n", status_code=status)
+        reason = ("upstream is unavailable and nothing is cached to list"
+                  if exc.cache is CacheStatus.GENERATED else "not found upstream")
+        return PlainTextResponse(f"{resource.key}: {reason}\n", status_code=status,
+                                 headers={"x-cache": exc.cache.value})
     except Unavailable as exc:
         state.cache = "UNAVAILABLE"
         return PlainTextResponse(

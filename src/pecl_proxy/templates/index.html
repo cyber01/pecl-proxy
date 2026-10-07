@@ -6,10 +6,10 @@
   <title>PECL proxy cache</title>
   <style>
     :root { --bg: #fff; --fg: #1d2129; --muted: #5f6673; --line: #e3e6ea; --code: #f4f5f7;
-            --ok: #1a7f37; --bad: #c62828; }
+            --ok: #1a7f37; --bad: #c62828; --warn: #8a4b00; --warn-bg: #fff1d6; }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #15171c; --fg: #e6e8eb; --muted: #9aa1ac; --line: #2b2f37; --code: #1e2128;
-              --ok: #4ac26b; --bad: #ff6b6b; }
+              --ok: #4ac26b; --bad: #ff6b6b; --warn: #f0b45a; --warn-bg: #3a2c14; }
     }
     body { margin: 0; background: var(--bg); color: var(--fg);
            font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -25,6 +25,9 @@
              vertical-align: top; }
     th { font-weight: 600; color: var(--muted); }
     td.num { text-align: right; white-space: nowrap; }
+    .version { white-space: nowrap; }
+    .tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px;
+           line-height: 18px; background: var(--warn-bg); color: var(--warn); }
   </style>
 </head>
 <body>
@@ -68,13 +71,22 @@ pecl config-set preferred_mirror {{ mirror }}</code></pre>
     {% for package in packages %}
       <tr>
         <td>{{ package.name }}</td>
-        <td>{{ package.versions|join(", ") if package.versions else t.metadata_only }}</td>
+        <td>
+        {%- for v in package.versions %}
+          {%- set stability = package.stability.get(v) %}
+          {{- ", " if not loop.first }}<span class="version">{{ v }}
+          {%- if stability and stability != "stable" %}
+            <span class="tag" title="{{ t.not_stable }}">{{ stability }}</span>
+          {%- endif %}</span>
+        {%- else %}{{ t.metadata_only }}{% endfor -%}
+        </td>
         <td class="num">{{ package.files }}</td>
         <td class="num">{{ size_text(package.size) }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% if unstable %}<p class="muted">{{ t.stability_note }}</p>{% endif %}
   {% else %}
   <p class="muted">{{ t.empty }}</p>
   {% endif %}

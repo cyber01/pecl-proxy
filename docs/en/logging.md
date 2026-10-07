@@ -28,7 +28,7 @@ Common fields: `ts` (ISO-8601, UTC), `level`, `type`, `logger`, `msg`.
 
 - `resource` — channel resource type (`channel`, `allreleases`, `release`, `deps`, `archive`,
   …), `null` for service paths.
-- `cache` — as in the `X-Cache` header (`HIT`, `MISS`, `REVALIDATED`, `UPDATED`, `STALE`),
+- `cache` — as in the `X-Cache` header (`HIT`, `MISS`, `REVALIDATED`, `UPDATED`, `STALE`, `GENERATED`),
   plus `NEGATIVE` (recent upstream 404), `UNAVAILABLE` (upstream unavailable, not cached) and
   `BAD_UPSTREAM` (broken or too large upstream response).
 - `client_ip` — taken from `X-Forwarded-For`/`X-Real-IP` sent by trusted proxies

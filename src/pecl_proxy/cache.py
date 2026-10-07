@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import hashlib
 import logging
 import tarfile
 import time
@@ -16,6 +17,7 @@ from typing import Any
 from .config import Settings
 from .logs import app_log, log_event
 from .metrics import Metrics
+from .offline import OfflineListings
 from .resources import Kind, Resource, classify, release_metadata
 from .rewrite import Rewriter, build_channel_xml, channel_name
 from .storage import CacheStore, Meta
@@ -29,6 +31,7 @@ class CacheStatus(StrEnum):
     UPDATED = "UPDATED"  # upstream had newer content, cache replaced
     STALE = "STALE"  # upstream unusable, served the last cached copy
     NEGATIVE = "NEGATIVE"  # upstream recently answered 404
+    GENERATED = "GENERATED"  # channel listing built from the cache (upstream unavailable)
 
 
 class NotFound(Exception):
@@ -51,6 +54,13 @@ class Entry:
     resource: Resource
     meta: Meta
     cache: CacheStatus
+    body: bytes | None = None  # generated content that is not stored in the cache
+
+
+# Listings of the channel and of a package's releases: offline they are generated from the
+# cache, so clients only see what can really be installed (see offline.py)
+LISTINGS = frozenset({Kind.PACKAGES, Kind.CATEGORIES, Kind.CATEGORY, Kind.ALLRELEASES,
+                      Kind.STABILITY})
 
 
 class CacheService:
@@ -82,11 +92,31 @@ class CacheService:
 
         Raises :class:`NotFound`, :class:`Unavailable` or :class:`BadUpstreamData`.
         """
+        if resource.kind in LISTINGS:
+            return await self._get_listing(resource)
         return await self._get(resource, count_hit=True)
+
+    async def _get_listing(self, resource: Resource) -> Entry:
+        """Channel listings: from upstream when it is reachable, else built from the cache."""
+        if self.upstream.available:
+            try:
+                entry = await self._get(resource, count_hit=False)
+            except Unavailable:
+                pass
+            else:
+                if entry.cache is not CacheStatus.STALE or self.upstream.available:
+                    return entry
+        channel = await self.upstream_channel_name() or self.settings.upstream_host
+        body = OfflineListings(self.store, channel).build(resource)
+        if body is None:
+            raise NotFound(404, CacheStatus.GENERATED)
+        meta = Meta(content_type=resource.content_type, size=len(body),
+                    sha256=hashlib.sha256(body).hexdigest(), fetched_at=self._clock())
+        return Entry(resource, meta, CacheStatus.GENERATED, body)
 
     async def render(self, entry: Entry, public_base: str) -> bytes:
         """Body of a text resource as served to clients (URLs point to the proxy)."""
-        body = self.store.read_bytes(entry.resource.key)
+        body = entry.body if entry.body is not None else self.store.read_bytes(entry.resource.key)
         if entry.resource.kind is Kind.CHANNEL:
             body = build_channel_xml(body, public_base, self.settings.channel_summary)
         if entry.resource.rewrite:
@@ -131,9 +161,10 @@ class CacheService:
             self._hits.pop(key, None)
 
     async def drain(self) -> None:
-        """Wait for background tasks (heartbeats, release completion)."""
+        """Wait for background tasks (heartbeats, release completion, upstream probe)."""
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
+        await self.upstream.wait_probe()
 
     async def close(self) -> None:
         for task in list(self._tasks):

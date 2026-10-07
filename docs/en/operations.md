@@ -30,6 +30,7 @@ The `X-Cache` response header tells what happened:
 | `REVALIDATED` | The upstream confirmed the copy is current (304 or the same content). |
 | `UPDATED` | The upstream returned new content, the cache was updated. |
 | `STALE` | The upstream is unavailable (or the resource disappeared there); the last stored copy was served. |
+| `GENERATED` | The upstream is unavailable; a listing (channel or release list) was built from the cache (see below). A `404` with it means there is nothing cached to list. |
 
 ### Heartbeat and `history/`
 
@@ -50,15 +51,33 @@ live in memory and start over after a restart. Disable the heartbeat with
 
 ## Upstream outages
 
-1. An upstream request is retried up to `UPSTREAM_RETRIES` times with a growing pause
-   (`UPSTREAM_RETRY_DELAY`) on network errors, timeouts, 5xx and 429.
-2. When all attempts fail, the upstream is considered unavailable for
-   `UPSTREAM_DOWN_COOLDOWN` seconds (`event: upstream_down`). During that time the upstream is
-   not contacted and responses come from the cache right away, without waiting for timeouts.
-3. Whatever is cached is served as is (`X-Cache: STALE`) — the last upstream snapshot.
-4. Anything not cached gets a `504` with an explanation.
-5. An upstream 404 is remembered for `NEGATIVE_TTL` seconds.
-6. When the upstream answers again: `event: upstream_up`.
+How liveness is tracked:
+
+- While the upstream is up, the server checks it in the background every
+  `UPSTREAM_HEALTHCHECK_INTERVAL` seconds (default 30). Any failed request also counts.
+- A request to the upstream is retried up to `UPSTREAM_RETRIES` times with a growing pause
+  (`UPSTREAM_RETRY_DELAY`) on network errors, timeouts, 5xx and 429. When all attempts fail,
+  the upstream is marked down (`event: upstream_down`).
+- While it is down, a background probe re-checks it at most every `UPSTREAM_DOWN_COOLDOWN`
+  seconds. Clients never wait for it: until a probe succeeds, requests are answered from the
+  cache immediately. When it answers again: `event: upstream_up`.
+
+What clients get while the upstream is down or `OFFLINE=true`:
+
+1. Package and release files that are cached are served as is (`X-Cache: STALE`) — the last
+   upstream snapshot.
+2. Listings are generated from the cache (`X-Cache: GENERATED`) instead of serving the stored
+   upstream snapshot, so the client is never sent after packages or versions that cannot be
+   installed:
+   - `p/packages.xml` and the category files used by `pecl remote-list`, `list-all` and
+     `search`: only packages with at least one cached archive, and only their cached versions;
+   - each package's release list `r/<pkg>/allreleases.xml` and `latest.txt`, `stable.txt`,
+     `beta.txt`, `alpha.txt`, `devel.txt`: only versions whose archive is cached, newest first,
+     with their stability. So `pecl install <package>` without a version picks the newest
+     cached release that fits `preferred_state`. A package without cached archives gets a 404
+     (pecl reports "No releases available").
+3. Anything not cached gets a `504` with an explanation.
+4. An upstream 404 is remembered for `NEGATIVE_TTL` seconds.
 
 `PECL_PROXY_OFFLINE=true` switches to cache-only mode: the upstream is never contacted. Useful
 to check that the cache is enough for your builds, or for a copy of the cache in a closed
@@ -202,10 +221,10 @@ Keep port 80 answering (a redirect to https is fine): before every install pecl 
 
 | Metric | Type | Labels |
 |---|---|---|
-| `pecl_proxy_requests_total` | counter | `resource` (resource type), `cache` (`X-Cache`, `UNAVAILABLE`, `BAD_UPSTREAM`, `NEGATIVE`), `status` |
+| `pecl_proxy_requests_total` | counter | `resource` (resource type), `cache` (`X-Cache` incl. `GENERATED`, `UNAVAILABLE`, `BAD_UPSTREAM`, `NEGATIVE`), `status` |
 | `pecl_proxy_request_duration_seconds` | histogram | `resource` |
 | `pecl_proxy_response_bytes_total` | counter | `resource` |
-| `pecl_proxy_upstream_requests_total` | counter | `result` (HTTP status, `error`, `too_large`) |
+| `pecl_proxy_upstream_requests_total` | counter | `result` (HTTP status, `error`, `too_large`, `probe_ok`, `probe_failed`) |
 | `pecl_proxy_upstream_request_duration_seconds` | histogram | — |
 | `pecl_proxy_upstream_available` | gauge | 1/0 |
 | `pecl_proxy_heartbeat_checks_total` | counter | `result` (`unchanged`, `changed`, `gone`, `error`) |

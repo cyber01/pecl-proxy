@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -25,6 +26,8 @@ from pathlib import Path
 from .version import version_key
 
 META_SUFFIX = ".meta.json"
+_RELEASE = re.compile(rb"<r>\s*<v>([^<]+)</v>\s*<s>([^<]+)</s>")
+_RELEASE_STABILITY = re.compile(rb"<st>\s*([^<]+?)\s*</st>")
 
 
 @dataclass
@@ -47,6 +50,8 @@ class Meta:
 class PackageSummary:
     name: str
     versions: list[str] = field(default_factory=list)  # versions with a cached archive
+    # version -> stable|beta|alpha|devel|snapshot, None if no metadata of it is cached
+    stability: dict[str, str | None] = field(default_factory=dict)
     files: int = 0
     size: int = 0
 
@@ -191,9 +196,30 @@ class CacheStore:
                 summary.name = resource.package  # archive names keep the original case
                 if resource.version not in summary.versions:
                     summary.versions.append(resource.version)
-        for summary in result.values():
+        for name, summary in result.items():
             summary.versions.sort(key=version_key, reverse=True)
+            summary.stability = self._stability(name, summary.versions)
         return dict(sorted(result.items()))
+
+    def _stability(self, package: str, versions: list[str]) -> dict[str, str | None]:
+        """Stability of cached versions: from the release list, else from ``<version>.xml``."""
+        if not versions:
+            return {}
+        known = {v.decode(): s.decode()
+                 for v, s in _RELEASE.findall(self._cached(f"rest/r/{package}/allreleases.xml"))}
+        result: dict[str, str | None] = {}
+        for version in versions:
+            if version not in known:
+                match = _RELEASE_STABILITY.search(self._cached(f"rest/r/{package}/{version}.xml"))
+                known[version] = match.group(1).decode() if match else None
+            result[version] = known[version]
+        return result
+
+    def _cached(self, key: str) -> bytes:
+        try:
+            return self.read_bytes(key) if self.read_meta(key) else b""
+        except (OSError, ValueError):
+            return b""
 
     def package_keys(self, package: str, version: str | None = None) -> list[str]:
         """All cached keys belonging to a package (optionally to one of its versions)."""

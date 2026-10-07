@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     upstream_retries: int = Field(2, ge=0)
     upstream_retry_delay: float = Field(1.0, ge=0)
     upstream_down_cooldown: float = Field(30.0, ge=0)
+    upstream_healthcheck_interval: float = Field(30.0, ge=0)
     offline: bool = False
     max_download_size: ByteSize = 200 * 1024**2
 

@@ -29,6 +29,7 @@
 | `REVALIDATED` | Upstream подтвердил, что копия актуальна (304 или то же содержимое). |
 | `UPDATED` | Upstream отдал новое содержимое, кеш обновлён. |
 | `STALE` | Upstream недоступен (или ресурс у него пропал) — отдана последняя сохранённая копия. |
+| `GENERATED` | Upstream недоступен — список (канала или релизов) собран из кеша (см. ниже). `404` с ним — в кеше нечего перечислить. |
 
 ### Heartbeat и `history/`
 
@@ -48,15 +49,33 @@
 
 ## Недоступность upstream
 
-1. Запрос к upstream повторяется до `UPSTREAM_RETRIES` раз с растущей паузой
-   (`UPSTREAM_RETRY_DELAY`) при сетевой ошибке, таймауте, 5xx и 429.
-2. Если все попытки неудачны, upstream считается недоступным на `UPSTREAM_DOWN_COOLDOWN`
-   секунд (`event: upstream_down`). В это время в upstream не ходим, ответы идут сразу из
-   кеша, без ожидания таймаутов.
-3. То, что есть в кеше, отдаётся как есть (`X-Cache: STALE`) — последний снимок upstream.
-4. Чего нет в кеше — `504` с пояснением.
-5. Ответ 404 от upstream запоминается на `NEGATIVE_TTL` секунд.
-6. Когда upstream снова отвечает — `event: upstream_up`.
+Как отслеживается доступность:
+
+- Пока upstream доступен, сервер проверяет его в фоне каждые `UPSTREAM_HEALTHCHECK_INTERVAL`
+  секунд (по умолчанию 30). Учитывается и любой неудачный запрос.
+- Запрос к upstream повторяется до `UPSTREAM_RETRIES` раз с растущей паузой
+  (`UPSTREAM_RETRY_DELAY`) при сетевой ошибке, таймауте, 5xx и 429. Если все попытки
+  неудачны, upstream помечается недоступным (`event: upstream_down`).
+- Пока он недоступен, фоновая проба перепроверяет его не чаще раза в `UPSTREAM_DOWN_COOLDOWN`
+  секунд. Клиенты её не ждут: до успешной пробы запросы сразу обслуживаются из кеша. Когда
+  upstream снова отвечает — `event: upstream_up`.
+
+Что получают клиенты, пока upstream недоступен или включён `OFFLINE=true`:
+
+1. Закешированные файлы пакетов и версий отдаются как есть (`X-Cache: STALE`) — последний
+   снимок upstream.
+2. Списки собираются из кеша (`X-Cache: GENERATED`), сохранённый снимок upstream для них не
+   используется. Поэтому клиент не идёт за пакетами и версиями, которые нельзя установить:
+   - `p/packages.xml` и файлы категорий, которые используют `pecl remote-list`, `list-all` и
+     `search`: только пакеты, у которых есть хотя бы один архив в кеше, и только их
+     закешированные версии;
+   - список релизов пакета `r/<pkg>/allreleases.xml` и `latest.txt`, `stable.txt`,
+     `beta.txt`, `alpha.txt`, `devel.txt`: только версии с архивом в кеше, от новых к старым,
+     со своей стабильностью. Поэтому `pecl install <пакет>` без версии выбирает самый свежий
+     закешированный релиз, подходящий под `preferred_state`. Пакет без архивов в кеше получает
+     404 (pecl сообщает «No releases available»).
+3. Чего нет в кеше — `504` с пояснением.
+4. Ответ 404 от upstream запоминается на `NEGATIVE_TTL` секунд.
 
 `PECL_PROXY_OFFLINE=true` включает режим «только кеш»: в upstream не ходим вообще. Удобно,
 чтобы проверить, что кеша достаточно для сборок, или для копии кеша в закрытом контуре.
@@ -194,10 +213,10 @@ $proxy_add_x_forwarded_for;` или `proxy_set_header X-Real-IP $remote_addr;`. 
 
 | Метрика | Тип | Метки |
 |---|---|---|
-| `pecl_proxy_requests_total` | counter | `resource` (тип ресурса), `cache` (`X-Cache`, `UNAVAILABLE`, `BAD_UPSTREAM`, `NEGATIVE`), `status` |
+| `pecl_proxy_requests_total` | counter | `resource` (тип ресурса), `cache` (`X-Cache`, в т.ч. `GENERATED`, `UNAVAILABLE`, `BAD_UPSTREAM`, `NEGATIVE`), `status` |
 | `pecl_proxy_request_duration_seconds` | histogram | `resource` |
 | `pecl_proxy_response_bytes_total` | counter | `resource` |
-| `pecl_proxy_upstream_requests_total` | counter | `result` (HTTP-код, `error`, `too_large`) |
+| `pecl_proxy_upstream_requests_total` | counter | `result` (HTTP-код, `error`, `too_large`, `probe_ok`, `probe_failed`) |
 | `pecl_proxy_upstream_request_duration_seconds` | histogram | — |
 | `pecl_proxy_upstream_available` | gauge | 1/0 |
 | `pecl_proxy_heartbeat_checks_total` | counter | `result` (`unchanged`, `changed`, `gone`, `error`) |

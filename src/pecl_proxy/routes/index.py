@@ -53,6 +53,13 @@ TEXTS = {
         "col_files": "Files",
         "col_size": "Size",
         "metadata_only": "metadata only",
+        "not_stable": "not a stable release",
+        "stability_note": Markup(
+            "Versions marked <span class=\"tag\">beta</span>, <span class=\"tag\">alpha</span> "
+            "or <span class=\"tag\">devel</span> are not stable releases: "
+            "<code>pecl install &lt;package&gt;</code> skips them unless "
+            "<code>preferred_state</code> allows them or they are requested explicitly "
+            "(<code>&lt;package&gt;-beta</code>, <code>&lt;package&gt;-&lt;version&gt;</code>)."),
         "empty": "Nothing yet: packages get cached on their first request.",
         "units": ("KB", "MB", "GB"),
     },
@@ -86,6 +93,13 @@ TEXTS = {
         "col_files": "Файлов",
         "col_size": "Размер",
         "metadata_only": "только метаданные",
+        "not_stable": "нестабильный релиз",
+        "stability_note": Markup(
+            "Версии с пометкой <span class=\"tag\">beta</span>, <span class=\"tag\">alpha</span> "
+            "или <span class=\"tag\">devel</span> — нестабильные релизы: "
+            "<code>pecl install &lt;пакет&gt;</code> по умолчанию их пропускает; они "
+            "ставятся, если это разрешает <code>preferred_state</code> или они запрошены явно "
+            "(<code>&lt;пакет&gt;-beta</code>, <code>&lt;пакет&gt;-&lt;версия&gt;</code>)."),
         "empty": "Пока пусто: пакеты попадают в кеш при первом запросе.",
         "units": ("КБ", "МБ", "ГБ"),
     },
@@ -100,6 +114,7 @@ async def index(request: Request) -> HTMLResponse:
     texts = TEXTS[language]
     service = request.app.state.service
     files, size = service.store.stats()
+    packages = list(service.store.packages().values())
     html = _templates.get_template("index.html").render(
         lang=language,
         t=texts,
@@ -108,7 +123,8 @@ async def index(request: Request) -> HTMLResponse:
         public_base=request.state.public_base,
         mirror=mirror_host(request.state.public_base),
         upstream=service.upstream.status(),
-        packages=list(service.store.packages().values()),
+        packages=packages,
+        unstable=any(s not in (None, "stable") for p in packages for s in p.stability.values()),
         files=files,
         size=human_size(size, texts["units"]),
     )

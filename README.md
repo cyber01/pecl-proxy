@@ -31,8 +31,13 @@ pecl install redis ──► pecl-proxy ──(cache misses only)──► pecl.
 - Mutable metadata (release lists, `stable.txt` and so on) is refreshed after a TTL with
   conditional requests (ETag/Last-Modified). Release files are kept forever and occasionally
   re-checked in the background (heartbeat).
-- When pecl.php.net is unavailable, the last stored snapshot is served; anything not cached
-  gets a 504.
+- The upstream is health-checked in the background. When pecl.php.net is unavailable (or
+  `PECL_PROXY_OFFLINE=true`), cached files are served from the last snapshot; channel listings
+  (`remote-list`, `search`) and release lists (`allreleases.xml`, `stable.txt`, …) are built
+  from what is really cached, so `pecl install redis` picks the newest cached version; anything
+  not cached gets a 504 — immediately, without waiting for timeouts.
+- Releases of every stability (`stable`, `beta`, `alpha`, `devel`) are supported; the landing
+  page and the admin API show which cached versions are not stable.
 
 ## Quick start (Docker)
 
@@ -73,6 +78,10 @@ Three rules without which offline installs break (details in
    aborts if it is unreachable; the port is ignored in that check.
 3. **Do not run `pecl update-channels` while the internet is reachable** — it points the
    channel back to pecl.php.net (run the two connection commands again afterwards).
+
+In a closed network also point the name `pecl.php.net` at the proxy (`--add-host`, `extra_hosts`
+or DNS): `remote-info`, `remote-list` and `search` check `http://pecl.php.net/channel.xml`
+directly and otherwise wait 60 s for it.
 
 ## Documentation
 

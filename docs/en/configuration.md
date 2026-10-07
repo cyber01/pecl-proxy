@@ -27,7 +27,8 @@ A template with every variable: [`.env.example`](../../.env.example).
 | `UPSTREAM_READ_TIMEOUT` | `60` | Timeout for reading the upstream response. |
 | `UPSTREAM_RETRIES` | `2` | How many times to retry an upstream request after a failed attempt: network error, timeout, 5xx or 429. A 404 is not retried. `0` disables retries. |
 | `UPSTREAM_RETRY_DELAY` | `1` | Pause before the first retry; every next one is twice as long (1 → 2 → 4…). |
-| `UPSTREAM_DOWN_COOLDOWN` | `30` | When all attempts fail, the upstream is considered unavailable for this many seconds: requests are served from the cache right away, without attempts or waiting for timeouts. |
+| `UPSTREAM_DOWN_COOLDOWN` | `30` | While the upstream is down it is re-checked by a background probe at most this often. Until a probe succeeds every request is served from the cache right away, without attempts or waiting for timeouts. |
+| `UPSTREAM_HEALTHCHECK_INTERVAL` | `30` | While the upstream is up it is checked in the background this often (seconds), so an outage is noticed even when everything is served from the cache. `0` disables the periodic check; failed client requests still mark the upstream down. |
 | `OFFLINE` | `false` | Forced offline mode: never contact the upstream, serve only from the cache. |
 | `MAX_DOWNLOAD_SIZE` | `200MB` | Maximum size of an upstream file; larger files fail with 502 and are not cached. |
 
@@ -58,7 +59,7 @@ archive with the channel it installs from, and archives are served unmodified. D
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `INDEX_ENABLED` | `true` | Page `/` with cached packages, upstream state and client setup commands. `false` makes `/` answer 404. |
+| `INDEX_ENABLED` | `true` | Page `/` with cached packages (non-stable versions are marked), upstream state and client setup commands. `false` makes `/` answer 404. |
 | `INDEX_LANGUAGE` | `en` | Language of the page: `en` or `ru`. |
 
 ## Metrics

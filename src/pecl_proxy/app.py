@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
@@ -53,6 +54,10 @@ def create_app(
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         service.store.cleanup_tmp()
+        healthchecks = None
+        if settings.upstream_healthcheck_interval > 0 and not settings.offline:
+            healthchecks = asyncio.get_running_loop().create_task(
+                service.upstream.run_healthchecks())
         metrics_server = None
         if settings.metrics_enabled and settings.metrics_port:
             metrics_server, _ = start_metrics_server(
@@ -68,6 +73,9 @@ def create_app(
         try:
             yield
         finally:
+            if healthchecks is not None:
+                healthchecks.cancel()
+                await asyncio.gather(healthchecks, return_exceptions=True)
             if metrics_server is not None:
                 metrics_server.shutdown()
                 metrics_server.server_close()

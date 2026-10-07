@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 import time
@@ -59,6 +60,7 @@ class UpstreamClient:
         self._down_until = 0.0
         self._down = False
         self._last_error: str | None = None
+        self._probe: asyncio.Task | None = None
         timeout = httpx.Timeout(
             connect=settings.upstream_connect_timeout,
             read=settings.upstream_read_timeout,
@@ -76,18 +78,80 @@ class UpstreamClient:
         )
 
     async def aclose(self) -> None:
+        if self._probe is not None:
+            self._probe.cancel()
+            await asyncio.gather(self._probe, return_exceptions=True)
         await self.client.aclose()
 
     # -- state -----------------------------------------------------------------------------
 
     @property
     def available(self) -> bool:
-        return not self.settings.offline and self._clock() >= self._down_until
+        """Whether requests may go to the upstream.
+
+        After a failure the upstream stays unavailable until a background probe reaches it
+        again (one probe per ``UPSTREAM_DOWN_COOLDOWN``), so client requests never wait for
+        connection timeouts of a dead upstream.
+        """
+        if self.settings.offline:
+            return False
+        if not self._down:
+            return True
+        if self._clock() >= self._down_until:
+            self._start_probe()
+        return False
+
+    def _start_probe(self) -> None:
+        if self._probe is not None and not self._probe.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._probe = loop.create_task(self._run_probe())
+
+    async def _run_probe(self) -> None:
+        try:
+            response = await self.client.get("channel.xml")
+        except httpx.HTTPError as exc:
+            error = f"{type(exc).__name__}: {exc}".rstrip(": ")
+        else:
+            if response.status_code < 500:
+                self.metrics.upstream_requests.labels("probe_ok").inc()
+                self._mark_up()
+                return
+            error = f"HTTP {response.status_code}"
+        self.metrics.upstream_requests.labels("probe_failed").inc()
+        self._down_until = self._clock() + self.settings.upstream_down_cooldown
+        self._last_error = error
+
+    async def wait_probe(self) -> None:
+        if self._probe is not None:
+            await asyncio.gather(self._probe, return_exceptions=True)
+
+    async def healthcheck(self) -> None:
+        """One liveness check: a request (with retries) while up, the probe while down."""
+        if self.settings.offline:
+            return
+        if self._down:
+            if self.available:  # starts the probe once the cooldown has passed
+                return
+            await self.wait_probe()
+            return
+        with contextlib.suppress(UpstreamUnavailable, UpstreamTooLarge):
+            await self.fetch("channel.xml")
+
+    async def run_healthchecks(self) -> None:
+        """Check the upstream every ``UPSTREAM_HEALTHCHECK_INTERVAL`` seconds (server only)."""
+        while True:
+            await asyncio.sleep(self.settings.upstream_healthcheck_interval)
+            await self.healthcheck()
 
     def status(self) -> dict:
         return {
             "url": self.settings.upstream_url,
             "offline_mode": self.settings.offline,
+            "healthcheck_interval": self.settings.upstream_healthcheck_interval,
             "available": self.available,
             "down": self._down,
             "retry_in_seconds": max(0.0, round(self._down_until - self._clock(), 1)),

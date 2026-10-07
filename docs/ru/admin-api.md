@@ -20,7 +20,7 @@ export ADMIN=http://pecl-proxy.example.local/_admin
 | Метод и путь | Действие |
 |---|---|
 | `GET /status` | Версия, состояние upstream, размер кеша, основные настройки. |
-| `GET /packages` | Пакеты в кеше: версии с архивами, число файлов, размер. |
+| `GET /packages` | Пакеты в кеше: версии с архивами и их стабильность, число файлов, размер. |
 | `GET /packages/{name}` | Один пакет и список его файлов в кеше. |
 | `DELETE /packages/{name}` | Удалить пакет из кеша целиком. |
 | `DELETE /packages/{name}/{version}` | Удалить одну версию (архив и её REST-файлы). |
@@ -37,6 +37,17 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" $ADMIN/refresh -d '{"package":
      -H "Content-Type: application/json"
 curl -s -X POST -H "Authorization: Bearer $TOKEN" $ADMIN/warm \
      -H "Content-Type: application/json" -d '{"packages": ["pecl_http-4.3.1"]}'
+```
+
+Ответ `packages` (`stability` равно `null`, если метаданных версии нет в кеше):
+
+```json
+{
+  "packages": [
+    {"name": "raphf", "versions": ["2.0.2", "0.1.0"],
+     "stability": {"2.0.2": "stable", "0.1.0": "beta"}, "files": 10, "size": 30582}
+  ]
+}
 ```
 
 Ответ `warm`:
@@ -61,7 +72,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" $ADMIN/warm \
 |---|---|
 | `pecl-proxy serve` | Запустить сервер (команда по умолчанию). |
 | `pecl-proxy warm SPEC... [--no-deps]` | Скачать пакеты в кеш (`redis`, `redis-6.3.0`, `apcu-beta`). |
-| `pecl-proxy list [--json]` | Пакеты в кеше. |
+| `pecl-proxy list [--json]` | Пакеты в кеше; нестабильные версии помечены: `2.0.2, 0.1.0 (beta)`. |
 | `pecl-proxy purge NAME [VERSION]` | Удалить пакет или версию. |
 | `pecl-proxy refresh [NAME]` | Перепроверить метаданные при следующем запросе. |
 | `pecl-proxy verify` | Сверить sha256 всех файлов кеша; код выхода `1` при расхождениях. |
