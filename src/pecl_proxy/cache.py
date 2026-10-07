@@ -117,15 +117,13 @@ class CacheService:
 
     def mark_stale(self, package: str | None = None) -> int:
         """Force revalidation of mutable metadata (all of it, or of one package)."""
-        keys = self.store.package_keys(package) if package else self.store.keys()
-        count = 0
-        for key in keys:
-            resource = classify(key)
-            if resource is not None and not resource.versioned:
-                self.store.update_meta(key, validated_at=0.0)
-                count += 1
         self._negative.clear()
-        return count
+        return self.store.mark_stale(package)
+
+    def purge(self, package: str, version: str | None = None) -> list[str]:
+        keys = self.store.purge(package, version)
+        self.forget(keys)
+        return keys
 
     def forget(self, keys: list[str]) -> None:
         for key in keys:

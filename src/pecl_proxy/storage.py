@@ -211,6 +211,26 @@ class CacheStore:
         return selected
 
 
+    def purge(self, package: str, version: str | None = None) -> list[str]:
+        """Delete a package (or one of its versions); returns the removed keys."""
+        keys = self.package_keys(package, version)
+        for key in keys:
+            self.delete(key)
+        return keys
+
+    def mark_stale(self, package: str | None = None) -> int:
+        """Make mutable metadata (of one package, or all) revalidate on the next request."""
+        from .resources import classify
+
+        count = 0
+        for key in self.package_keys(package) if package else self.keys():
+            resource = classify(key)
+            if resource is not None and not resource.versioned:
+                self.update_meta(key, validated_at=0.0)
+                count += 1
+        return count
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:

@@ -8,7 +8,9 @@ from collections.abc import AsyncIterator, Callable
 
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import start_http_server as start_metrics_server
 
 from . import __version__
 from .cache import CacheService
@@ -16,7 +18,7 @@ from .config import Settings
 from .logs import app_log, log_event
 from .metrics import Metrics
 from .middleware import RequestContextMiddleware
-from .routes import protocol
+from .routes import admin, index, protocol
 from .storage import CacheStore
 from .upstream import UpstreamClient
 
@@ -50,13 +52,23 @@ def create_app(
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         service.store.cleanup_tmp()
+        metrics_server = None
+        if settings.metrics_enabled and settings.metrics_port:
+            metrics_server, _ = start_metrics_server(
+                settings.metrics_port, addr=settings.host, registry=metrics.registry
+            )
         log_event(app_log, logging.INFO, "pecl-proxy started", "startup",
                   version=__version__, upstream=settings.upstream_url,
                   data_dir=str(settings.data_dir), offline=settings.offline,
-                  public_url=settings.public_url)
+                  public_url=settings.public_url, admin_enabled=settings.admin_enabled,
+                  index_enabled=settings.index_enabled,
+                  metrics=_metrics_location(settings))
         try:
             yield
         finally:
+            if metrics_server is not None:
+                metrics_server.shutdown()
+                metrics_server.server_close()
             await service.close()
             await service.upstream.aclose()
             log_event(app_log, logging.INFO, "pecl-proxy stopped", "shutdown")
@@ -73,5 +85,23 @@ def create_app(
         return JSONResponse({"status": "ok", "version": __version__,
                              "upstream": service.upstream.status()})
 
+    if settings.metrics_enabled and not settings.metrics_port:
+        @app.get(settings.metrics_path, include_in_schema=False)
+        async def prometheus_metrics() -> Response:
+            return Response(generate_latest(metrics.registry),
+                            headers={"content-type": CONTENT_TYPE_LATEST})
+
+    if settings.admin_enabled:
+        app.include_router(admin.build_router(settings))
+    if settings.index_enabled:
+        app.include_router(index.router)
     app.include_router(protocol.router)  # catch-all, must stay last
     return app
+
+
+def _metrics_location(settings: Settings) -> str | None:
+    if not settings.metrics_enabled:
+        return None
+    if settings.metrics_port:
+        return f"{settings.host}:{settings.metrics_port}"
+    return settings.metrics_path

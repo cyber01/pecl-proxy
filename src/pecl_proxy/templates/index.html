@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PECL proxy cache</title>
+  <style>
+    :root { --bg: #fff; --fg: #1d2129; --muted: #5f6673; --line: #e3e6ea; --code: #f4f5f7;
+            --ok: #1a7f37; --bad: #c62828; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #15171c; --fg: #e6e8eb; --muted: #9aa1ac; --line: #2b2f37; --code: #1e2128;
+              --ok: #4ac26b; --bad: #ff6b6b; }
+    }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+           font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 32px 0 8px; }
+    .muted { color: var(--muted); }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    pre { background: var(--code); padding: 12px 14px; border-radius: 6px; overflow-x: auto; }
+    code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+             vertical-align: top; }
+    th { font-weight: 600; color: var(--muted); }
+    td.num { text-align: right; white-space: nowrap; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PECL proxy cache</h1>
+  <p class="muted">Кеширующий прокси канала {{ upstream.url }} · версия {{ version }}</p>
+  <p>
+    Upstream:
+    {% if upstream.offline_mode %}<span class="bad">принудительный офлайн</span>
+    {% elif upstream.available %}<span class="ok">доступен</span>
+    {% else %}<span class="bad">недоступен</span> (повтор через {{ upstream.retry_in_seconds }} с)
+    {% endif %}
+    · в кеше {{ files }} файлов, {{ size_mb }} МБ
+  </p>
+
+  <h2>Подключение клиента</h2>
+  <p>Один раз на машине или в образе направить канал pecl.php.net на этот сервер:</p>
+  <pre><code>pecl channel-update {{ public_base }}/channel.xml</code></pre>
+  <p>Дальше установка как обычно, все запросы идут через прокси:</p>
+  <pre><code>pecl install redis</code></pre>
+  <p>В Dockerfile:</p>
+  <pre><code>RUN pecl channel-update {{ public_base }}/channel.xml \
+ &amp;&amp; pecl install redis-6.3.0</code></pre>
+  <p class="muted">Команда <code>pecl update-channels</code> при доступном интернете вернёт канал
+    на оригинальный pecl.php.net; после неё повторите <code>channel-update</code>.</p>
+
+  <h2>Пакеты в кеше ({{ packages|length }})</h2>
+  {% if packages %}
+  <table>
+    <thead><tr><th>Пакет</th><th>Версии (архивы)</th><th class="num">Файлов</th>
+      <th class="num">Размер</th></tr></thead>
+    <tbody>
+    {% for package in packages %}
+      <tr>
+        <td>{{ package.name }}</td>
+        <td>{{ package.versions|join(", ") if package.versions else "только метаданные" }}</td>
+        <td class="num">{{ package.files }}</td>
+        <td class="num">{{ (package.size / 1024)|round(1) }} КБ</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Пока пусто: пакеты попадают в кеш при первом запросе.</p>
+  {% endif %}
+</main>
+</body>
+</html>
