@@ -1,47 +1,52 @@
 # pecl-proxy
 
-Кеширующий прокси для PEAR-канала **pecl.php.net**. Клиенты `pecl`/`pear` работают с ним
-вместо pecl.php.net. Что уже запрашивалось, прокси отдаёт из своего кеша. Остальное забирает
-с pecl.php.net, сохраняет и отдаёт. Цель — чтобы сборки (Dockerfile, CI) продолжали работать
-при нестабильной или отсутствующей внешней сети.
+**English** | [Русский](README_ru.md)
+
+> [!IMPORTANT]
+> This service was written for my own specific needs. The code is partially AI-generated.
+
+A caching proxy for the **pecl.php.net** PEAR channel. `pecl`/`pear` clients talk to it
+instead of pecl.php.net. Whatever has been requested before is served from the proxy's cache;
+everything else is fetched from pecl.php.net, stored and served. The goal is to keep builds
+(Dockerfiles, CI) working when the external network is unreliable or gone.
 
 ```
-pecl install redis ──► pecl-proxy ──(только при промахе кеша)──► pecl.php.net
+pecl install redis ──► pecl-proxy ──(cache misses only)──► pecl.php.net
                            │
-                           └── кеш на диске: архивы + метаданные
+                           └── on-disk cache: archives + metadata
 ```
 
-## Как это работает
+## How it works
 
-- Клиент один раз направляет канал pecl.php.net на прокси (`channel-update` +
-  `preferred_mirror`). Имя канала остаётся `pecl.php.net`, поэтому `pecl install redis`
-  и существующие Dockerfile'ы не меняются.
-- Прокси реализует REST-протокол PEAR-канала в объёме pecl.php.net (REST 1.0/1.1):
-  `channel.xml`, `rest/p|r|c|m/...`, архивы `get/...`, RSS `feeds/...`. Всё остальное — 404,
-  открытым прокси сервис не является.
-- В кеш попадает только то, что запросили клиенты, плюс метаданные, нужные для установки
-  скачанной версии. Весь pecl.php.net не зеркалируется.
-- Архивы отдаются **байт-в-байт** как на pecl.php.net. В метаданных заменяются только адреса
-  pecl.php.net на адрес прокси.
-- Изменяемые метаданные (списки релизов, `stable.txt` и т.п.) обновляются по TTL
-  условными запросами (ETag/Last-Modified). Файлы конкретных версий хранятся бессрочно и
-  изредка перепроверяются в фоне (heartbeat).
-- Если pecl.php.net недоступен, отдаётся последний сохранённый снимок; то, чего нет в кеше, —
-  ошибка 504.
+- A client points the pecl.php.net channel at the proxy once (`channel-update` +
+  `preferred_mirror`). The channel is still called `pecl.php.net`, so `pecl install redis`
+  and existing Dockerfiles stay unchanged.
+- The proxy implements the PEAR channel REST protocol as pecl.php.net provides it
+  (REST 1.0/1.1): `channel.xml`, `rest/p|r|c|m/...`, archives `get/...`, RSS `feeds/...`.
+  Everything else is a 404 — the service is not an open proxy.
+- Only what clients request is cached, plus the metadata needed to install a downloaded
+  version. pecl.php.net is not mirrored as a whole.
+- Archives are served **byte-for-byte** as on pecl.php.net. In metadata only the pecl.php.net
+  addresses are replaced with the proxy address.
+- Mutable metadata (release lists, `stable.txt` and so on) is refreshed after a TTL with
+  conditional requests (ETag/Last-Modified). Release files are kept forever and occasionally
+  re-checked in the background (heartbeat).
+- When pecl.php.net is unavailable, the last stored snapshot is served; anything not cached
+  gets a 504.
 
-## Быстрый старт (Docker)
+## Quick start (Docker)
 
 ```sh
-cp .env.example .env            # укажите PECL_PROXY_PUBLIC_URL — адрес, по которому ходят клиенты
+cp .env.example .env            # set PECL_PROXY_PUBLIC_URL — the address clients use
 docker compose up -d --build
 curl http://pecl-proxy.example.local/healthz
 ```
 
-Сервис слушает только HTTP (порт 8080 в контейнере, наружу — 80). HTTPS обеспечивает внешний
-reverse proxy, пример — [`deploy/nginx.conf.example`](deploy/nginx.conf.example).
-Запуск без Docker описан в [docs/operations.md](docs/operations.md#запуск-без-docker).
+The service speaks plain HTTP only (port 8080 in the container, 80 outside). HTTPS is handled
+by an external reverse proxy, see [`deploy/nginx.conf.example`](deploy/nginx.conf.example).
+Running without Docker: [docs/en/operations.md](docs/en/operations.md#running-without-docker).
 
-## Подключение клиента
+## Connecting a client
 
 ```sh
 pecl channel-update http://pecl-proxy.example.local/channel.xml
@@ -49,7 +54,7 @@ pecl config-set preferred_mirror pecl-proxy.example.local
 pecl install redis
 ```
 
-В Dockerfile:
+In a Dockerfile:
 
 ```dockerfile
 FROM php:8.3-cli
@@ -59,38 +64,41 @@ RUN pecl channel-update http://pecl-proxy.example.local/channel.xml \
  && docker-php-ext-enable redis
 ```
 
-Три правила, без которых работа без интернета ломается (подробности —
-[docs/client-setup.md](docs/client-setup.md)):
+Three rules without which offline installs break (details in
+[docs/en/client-setup.md](docs/en/client-setup.md)):
 
-1. **Задайте `PECL_PROXY_PUBLIC_URL`.** PEAR-клиент отправляет заголовок `Host` без порта.
-2. **Публикуйте сервис на порту 80/443 и выполняйте `config-set preferred_mirror`.** Перед
-   каждой установкой pecl проверяет `http://<preferred_mirror>/channel.xml` (по умолчанию
-   pecl.php.net) и падает, если адрес недоступен; порт в этой проверке не учитывается.
-3. **Не запускайте `pecl update-channels` при живой сети** — он вернёт канал на pecl.php.net
-   (после него повторите две команды подключения).
+1. **Set `PECL_PROXY_PUBLIC_URL`.** The PEAR client sends the `Host` header without the port.
+2. **Publish the service on port 80/443 and run `config-set preferred_mirror`.** Before every
+   install pecl checks `http://<preferred_mirror>/channel.xml` (pecl.php.net by default) and
+   aborts if it is unreachable; the port is ignored in that check.
+3. **Do not run `pecl update-channels` while the internet is reachable** — it points the
+   channel back to pecl.php.net (run the two connection commands again afterwards).
 
-## Документация
+## Documentation
 
-- [docs/client-setup.md](docs/client-setup.md) — подключение клиентов и найденные особенности PEAR
-- [docs/configuration.md](docs/configuration.md) — все переменные окружения
-- [docs/operations.md](docs/operations.md) — кеш, офлайн, прогрев, бэкап, запуск без Docker,
-  reverse proxy, метрики, сборка образа в закрытой сети
-- [docs/admin-api.md](docs/admin-api.md) — Admin API и команды CLI
-- [docs/logging.md](docs/logging.md) — формат JSON-логов
+Contents: [docs/en](docs/en/README.md) (Русский: [docs/ru](docs/ru/README.md)).
 
-## Разработка
+- [Client setup](docs/en/client-setup.md) — connecting clients, what works offline, which
+  requests pecl commands make (`install`, `remote-info`, `remote-list`, …), PEAR client quirks
+- [Configuration](docs/en/configuration.md) — every environment variable
+- [Operations](docs/en/operations.md) — cache, offline mode, warm-up, backups, running without
+  Docker, reverse proxy and client IPs, metrics, building the image in a closed network
+- [Admin API and CLI](docs/en/admin-api.md) — managing the cache
+- [Logging](docs/en/logging.md) — JSON log format
+
+## Development
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                    # unit- и интеграционные тесты (фейковый pecl.php.net)
+.venv/bin/pytest                    # unit and integration tests (fake pecl.php.net)
 .venv/bin/ruff check src tests
 
-# end-to-end с настоящим PEAR-клиентом (нужны php и право слушать порт 80)
+# end-to-end with the real PEAR client (needs php and permission to listen on port 80)
 tests/e2e/setup_pear.sh
 .venv/bin/pytest -m e2e
 
-# проверка запущенного прокси против настоящего pecl.php.net
+# check a running proxy against the real pecl.php.net
 scripts/smoke.sh http://pecl-proxy.example.local raphf-2.0.2
 ```
 
-Тесты работают на записанных ответах pecl.php.net (`tests/fixtures/upstream`).
+The tests use recorded pecl.php.net responses (`tests/fixtures/upstream`).

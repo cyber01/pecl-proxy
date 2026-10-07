@@ -1,5 +1,7 @@
 # Эксплуатация
 
+[English](../en/operations.md) | **Русский** · [Оглавление](README.md)
+
 ## Что и как кешируется
 
 | Ресурс | Примеры | Политика |
@@ -141,12 +143,12 @@ PECL_PROXY_PUBLIC_URL=http://pecl-proxy.example.local
 ## Reverse proxy и HTTPS
 
 Сервис говорит только по HTTP. Для HTTPS поставьте перед ним nginx или балансировщик
-([`deploy/nginx.conf.example`](../deploy/nginx.conf.example)) и:
+([`deploy/nginx.conf.example`](../../deploy/nginx.conf.example)) и:
 
 - задайте `PECL_PROXY_PUBLIC_URL=https://pecl.example.local`;
 - либо доверьте прокси заголовки: `PECL_PROXY_TRUSTED_PROXIES=<IP или подсеть прокси>`.
   Сервис будет брать схему, хост и префикс пути из `X-Forwarded-Proto`, `X-Forwarded-Host`,
-  `X-Forwarded-Prefix`, а IP клиента для логов — из `X-Forwarded-For`.
+  `X-Forwarded-Prefix`, а IP клиента для логов — из `X-Forwarded-For` или `X-Real-IP`.
 
 ### nginx на хосте, сервис в Docker
 

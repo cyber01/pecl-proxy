@@ -1,5 +1,7 @@
 # Admin API и CLI
 
+[English](../en/admin-api.md) | **Русский** · [Оглавление](README.md)
+
 ## Admin API
 
 Включается заданием `PECL_PROXY_ADMIN_TOKEN`; без токена пути Admin API отвечают 404.
@@ -8,7 +10,7 @@
 пишутся в лог с `type: admin` ([logging.md](logging.md)); токен в лог не попадает.
 
 Admin API лучше не публиковать наружу: ограничьте доступ на reverse proxy (пример в
-[`deploy/nginx.conf.example`](../deploy/nginx.conf.example)).
+[`deploy/nginx.conf.example`](../../deploy/nginx.conf.example)).
 
 ```sh
 export TOKEN=...

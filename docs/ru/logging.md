@@ -1,5 +1,7 @@
 # Логи
 
+[English](../en/logging.md) | **Русский** · [Оглавление](README.md)
+
 Все логи — JSON, одна запись на строку. По умолчанию — stdout (`docker compose logs`,
 journald). `PECL_PROXY_LOG_FILE=/path/pecl-proxy.log` пишет в файл; файл открывается заново
 после ротации, так что подходит обычный logrotate.
