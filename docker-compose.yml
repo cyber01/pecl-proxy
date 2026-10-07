@@ -1,0 +1,21 @@
+# docker compose up -d
+#
+# Settings come from .env (copy .env.example). PECL_PROXY_PUBLIC_URL is the address clients
+# use; publish the service on port 80 (or 443 behind a TLS proxy, see deploy/) so that
+# `pecl config-set preferred_mirror` works - PEAR ignores ports for that check.
+services:
+  pecl-proxy:
+    build: .
+    image: pecl-proxy:latest
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "80:8080"
+      # - "9100:9100"  # when PECL_PROXY_METRICS_PORT=9100
+    volumes:
+      - pecl-cache:/data
+
+volumes:
+  pecl-cache:
